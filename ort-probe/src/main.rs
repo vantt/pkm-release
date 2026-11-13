@@ -57,7 +57,10 @@ fn main() -> Res<()> {
         .map(|s| s.split(',').map(|x| x.parse().unwrap()).collect())
         .unwrap_or_else(|| vec![1, 4]);
     let rss0 = rss();
+    #[cfg(not(feature = "dynamic"))]
     let env = ort::init().build()?;
+    #[cfg(feature = "dynamic")]
+    let env = ort::init_from(std::env::var("ORT_DYLIB_PATH").map_err(|_| "set ORT_DYLIB_PATH")?)?.build()?;
     let t0 = Instant::now();
     let tokenizer = Tokenizer::from_file(model.join("tokenizer.json")).map_err(|e| e.to_string())?;
     let tokenizer_ms = t0.elapsed().as_secs_f64() * 1e3;

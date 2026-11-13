@@ -16,7 +16,7 @@ default = ["static"]
 # ONNX Runtime liên kết tĩnh từ bản dựng sẵn của pyke (download-binaries lúc build).
 static = ["ort/download-binaries", "ort/tls-rustls"]
 # ONNX Runtime nạp lúc chạy từ thư viện động (ORT_DYLIB_PATH).
-dynamic = ["ort/load-dynamic"]
+dynamic = ["ort/load-dynamic", "ort/api-17"]
 
 [profile.release]
 lto = "fat"
