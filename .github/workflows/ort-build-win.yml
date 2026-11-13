@@ -39,9 +39,6 @@ jobs:
           .\build.bat --config Release --parallel --skip_tests --enable_msvc_static_runtime `
             --compile_no_warning_as_error --cmake_extra_defines onnxruntime_BUILD_UNIT_TESTS=OFF onnxruntime_USE_TELEMETRY=OFF
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          # Chỉ dựng thư viện tĩnh thì CMake không dựng các dependency phải link sau (re2): dựng riêng.
-          cmake --build build\Windows\Release --config Release --target re2 -- /m
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           "ort_build_minutes=$([int]((Get-Date) - $start).TotalMinutes)" | Out-File -Append $env:GITHUB_ENV
           Get-ChildItem build\Windows\Release\Release\*.lib | Select-Object Name, Length | Format-Table
       # Lưu ngay sau khi dựng (không chờ cả job xanh), để lần sau không dựng lại khi bước link còn hỏng.
@@ -50,6 +47,18 @@ jobs:
         with:
           path: ${{ runner.temp }}/onnxruntime/build/Windows/Release
           key: ort-win-mt-${{ inputs.ort_tag }}-v2
+      # Chỉ dựng thư viện tĩnh thì không dựng các dependency phải link sau (re2 nằm trong dự án con ngoài solution chính):
+      # gọi msbuild thẳng vào re2.vcxproj.
+      - name: Build re2
+        shell: pwsh
+        run: |
+          $B = "$env:RUNNER_TEMP\onnxruntime\build\Windows\Release"
+          if (Get-ChildItem -Recurse $B -Filter re2.lib) { "re2.lib có sẵn"; exit 0 }
+          $proj = Get-ChildItem -Recurse $B -Filter re2.vcxproj | Select-Object -First 1
+          if (-not $proj) { Write-Error "không thấy re2.vcxproj"; exit 1 }
+          $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
+          & "$vs\MSBuild\Current\Bin\MSBuild.exe" $proj.FullName /m /p:Configuration=Release /p:Platform=x64 /nologo /v:minimal
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Static libraries produced
         run: |
           cd "$RUNNER_TEMP/onnxruntime/build/Windows/Release"
