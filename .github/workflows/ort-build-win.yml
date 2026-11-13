@@ -29,7 +29,7 @@ jobs:
         id: ortcache
         with:
           path: ${{ runner.temp }}/onnxruntime/build/Windows/Release
-          key: ort-win-mt-${{ inputs.ort_tag }}-v1
+          key: ort-win-mt-${{ inputs.ort_tag }}-v2
       - name: Build ONNX Runtime (Release, static CRT, no tests)
         if: steps.ortcache.outputs.cache-hit != 'true'
         shell: pwsh
@@ -37,7 +37,10 @@ jobs:
           cd "$env:RUNNER_TEMP/onnxruntime"
           $start = Get-Date
           .\build.bat --config Release --parallel --skip_tests --enable_msvc_static_runtime `
-            --compile_no_warning_as_error --cmake_extra_defines onnxruntime_BUILD_UNIT_TESTS=OFF
+            --compile_no_warning_as_error --cmake_extra_defines onnxruntime_BUILD_UNIT_TESTS=OFF onnxruntime_USE_TELEMETRY=OFF
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          # Chỉ dựng thư viện tĩnh thì CMake không dựng các dependency phải link sau (re2): dựng riêng.
+          cmake --build build\Windows\Release --config Release --target re2 -- /m
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           "ort_build_minutes=$([int]((Get-Date) - $start).TotalMinutes)" | Out-File -Append $env:GITHUB_ENV
           Get-ChildItem build\Windows\Release\Release\*.lib | Select-Object Name, Length | Format-Table
@@ -46,23 +49,29 @@ jobs:
         if: steps.ortcache.outputs.cache-hit != 'true'
         with:
           path: ${{ runner.temp }}/onnxruntime/build/Windows/Release
-          key: ort-win-mt-${{ inputs.ort_tag }}-v1
+          key: ort-win-mt-${{ inputs.ort_tag }}-v2
       - name: Static libraries produced
         run: |
           cd "$RUNNER_TEMP/onnxruntime/build/Windows/Release"
           find . -name '*.lib' -printf '%s %p\n' | sort -k2 | tee "$GITHUB_WORKSPACE/ort-libs.txt" | grep -iE 're2|onnxruntime_common|cpuinfo|nsync|protobuf|onnx\.lib|onnx_proto' || true
           echo "libs: $(wc -l < "$GITHUB_WORKSPACE/ort-libs.txt")"
-      # ONNX Runtime 1.31 không còn dùng re2, nhưng ort-sys rc.15 luôn link `re2` khi liên kết tĩnh bản tự dựng:
-      # đặt một re2.lib rỗng ở chỗ nó tìm (`_deps/re2-build/Release`).
-      - name: Empty re2.lib for ort-sys
-        shell: cmd
+      # Gộp mọi thư viện tĩnh cần cho ORT thành một onnxruntime.lib (cách bản dựng sẵn của pyke đóng gói): ort-sys thấy
+      # file đơn thì chỉ link nó, không phải dò tên và chỗ từng thư viện (đặt tên `lib…`, `model_package/` khác chỗ nó tìm).
+      - name: Combine into one onnxruntime.lib
+        shell: pwsh
         run: |
-          set D=%RUNNER_TEMP%\onnxruntime\build\Windows\Release\_deps\re2-build\Release
-          mkdir "%D%"
-          for /f "usebackq delims=" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath`) do set VS=%%i
-          call "%VS%\VC\Auxiliary\Build\vcvars64.bat"
-          echo int pkm_re2_placeholder;> "%D%\empty.c"
-          cl /nologo /c /MT /Fo"%D%\empty.obj" "%D%\empty.c" && lib /nologo /OUT:"%D%\re2.lib" "%D%\empty.obj"
+          $B = "$env:RUNNER_TEMP\onnxruntime\build\Windows\Release"
+          $out = "$env:RUNNER_TEMP\ort-lib"; New-Item -ItemType Directory -Force $out | Out-Null
+          $libs = Get-ChildItem -Recurse $B -Filter *.lib | Where-Object {
+            $_.Name -notmatch '^(libprotobuf|libprotoc|libupb|mat|sqlite3_bundled|zlib_bundled|gtest|gmock|onnx_test|onnxruntime_providers_shared|.*test.*)\.lib$'
+          } | ForEach-Object { $_.FullName }
+          $libs | Out-File "$env:GITHUB_WORKSPACE\ort-combined.txt"
+          if (-not ($libs | Where-Object { $_ -match '\\re2\.lib$' })) { Write-Error "không có re2.lib"; exit 1 }
+          $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
+          $libexe = Get-ChildItem -Recurse "$vs\VC\Tools\MSVC" -Filter lib.exe | Where-Object { $_.FullName -match 'Hostx64\\x64' } | Select-Object -First 1
+          & $libexe.FullName /nologo /IGNORE:4006 /IGNORE:4221 "/OUT:$out\onnxruntime.lib" $libs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Get-Item "$out\onnxruntime.lib" | Select-Object Name, Length
       - name: Model files
         run: |
           M="$RUNNER_TEMP/e5"; mkdir -p "$M/onnx"
@@ -72,7 +81,7 @@ jobs:
       - name: Build ort-probe against it (static CRT from .cargo/config.toml)
         working-directory: ort-probe
         run: |
-          export ORT_LIB_LOCATION="$RUNNER_TEMP/onnxruntime/build/Windows/Release"
+          export ORT_LIB_LOCATION="$RUNNER_TEMP/ort-lib"
           cargo build --release --locked --no-default-features --features system 2>&1 | tail -20
       - name: Dependencies and run
         working-directory: ort-probe
@@ -95,3 +104,4 @@ jobs:
             ort-probe/result-*.json
             ort-probe/deps.txt
             ort-libs.txt
+            ort-combined.txt
