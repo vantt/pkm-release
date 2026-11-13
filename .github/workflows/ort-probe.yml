@@ -13,12 +13,13 @@ jobs:
       matrix:
         include:
           - {os: ubuntu-24.04, platform: linux-x64, variant: static}
-          - {os: macos-15, platform: darwin-arm64, variant: static}
+          - {os: macos-15, platform: darwin-arm64, variant: static, macos_target: "13.4"}
           - {os: windows-2025, platform: win32-x64, variant: static-crt-static}
           - {os: windows-2025, platform: win32-x64, variant: static-crt-dynamic, rustflags: "-C target-feature=-crt-static"}
           - {os: windows-2025, platform: win32-x64, variant: dynamic, ort: v1.32.0, ort_asset: onnxruntime-win-x64-1.32.0.zip}
           - {os: macos-15-intel, platform: darwin-x64, variant: static}
           - {os: macos-15-intel, platform: darwin-x64, variant: dynamic, ort: v1.22.0, ort_asset: onnxruntime-osx-x86_64-1.22.0.tgz}
+          - {os: macos-15, platform: darwin-arm64, variant: dynamic, ort: v1.32.0, ort_asset: onnxruntime-osx-arm64-1.32.0.tgz}
     runs-on: ${{ matrix.os }}
     env:
       MODEL_COMMIT: 761b726dd34fb83930e26aab4e9ac3899aa1fa78
@@ -46,12 +47,14 @@ jobs:
           cd "$RUNNER_TEMP"
           case "${{ matrix.ort_asset }}" in *.zip) unzip -q "${{ matrix.ort_asset }}" ;; *) tar xzf "${{ matrix.ort_asset }}" ;; esac
           D="$RUNNER_TEMP/${{ matrix.ort_asset }}"; D="${D%.zip}"; D="${D%.tgz}"
-          L=$(ls "$D"/lib/onnxruntime.dll "$D"/lib/libonnxruntime.dylib 2>/dev/null | head -1)
+          L=""; for f in "$D"/lib/onnxruntime.dll "$D"/lib/libonnxruntime.dylib; do [ -f "$f" ] && L="$f"; done
+          test -n "$L"
           echo "ORT_DYLIB_PATH=$L" >> "$GITHUB_ENV"; ls -la "$D/lib"
       - name: Build
         working-directory: ort-probe
         run: |
-          [ -n "${{ matrix.rustflags }}" ] && export RUSTFLAGS="${{ matrix.rustflags }}"
+          if [ -n "${{ matrix.rustflags }}" ]; then export RUSTFLAGS="${{ matrix.rustflags }}"; fi
+          if [ -n "${{ matrix.macos_target }}" ]; then export MACOSX_DEPLOYMENT_TARGET="${{ matrix.macos_target }}"; fi
           F="--features static"; [ "${{ matrix.variant }}" = dynamic ] && F="--features dynamic"
           start=$(date +%s); cargo build --release --locked --no-default-features $F 2>&1 | tail -15
           echo "build_seconds=$(( $(date +%s) - start ))" >> "$GITHUB_ENV"
