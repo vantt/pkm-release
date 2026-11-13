@@ -1,0 +1,59 @@
+name: ohs-eval
+on:
+  workflow_dispatch:
+    inputs:
+      label_suffix:
+        description: suffix for the run label
+        default: '1'
+permissions:
+  contents: read
+jobs:
+  eval:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            platform: darwin-arm64
+          - os: macos-13
+            platform: darwin-x64
+    runs-on: ${{ matrix.os }}
+    env:
+      OHS_VERSION: 0.17.2-vantt.8
+      OHS_COMMIT: 294902225b903113ff089bf63af5c8aa1fc8a50d
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: OHS bundle
+        run: |
+          gh release download "v$OHS_VERSION" -R vantt/obsidian-hybrid-search \
+            -p "ohs-$OHS_VERSION-${{ matrix.platform }}.tar.gz*" -D "$RUNNER_TEMP"
+          cd "$RUNNER_TEMP"
+          shasum -a 256 -c "ohs-$OHS_VERSION-${{ matrix.platform }}.tar.gz.sha256"
+          tar xzf "ohs-$OHS_VERSION-${{ matrix.platform }}.tar.gz"
+      - name: OHS source and fixture
+        run: |
+          git init -q "$RUNNER_TEMP/ohs"
+          git -C "$RUNNER_TEMP/ohs" fetch -q --depth 1 https://github.com/vantt/obsidian-hybrid-search.git "$OHS_COMMIT"
+          git -C "$RUNNER_TEMP/ohs" checkout -q --detach FETCH_HEAD
+          git clone -q https://github.com/vantt/obsidian-test-fixture "$RUNNER_TEMP/otf"
+          git -C "$RUNNER_TEMP/otf" checkout -q v0.12.0
+      - name: Eval
+        run: |
+          mkdir -p "$RUNNER_TEMP/tmp"
+          TMPDIR="$RUNNER_TEMP/tmp" node ohs-golden/eval/run-all.mjs \
+            --bundle "$RUNNER_TEMP/ohs-$OHS_VERSION-${{ matrix.platform }}" \
+            --ohs-repo "$RUNNER_TEMP/ohs" --otf "$RUNNER_TEMP/otf" \
+            --out out --label "${{ matrix.platform }}-${{ inputs.label_suffix }}"
+      - name: Model files
+        run: |
+          cd ~/.cache/huggingface/Xenova/multilingual-e5-small
+          shasum -a 256 config.json tokenizer.json tokenizer_config.json onnx/model_quantized.onnx \
+            | tee "$GITHUB_WORKSPACE/out/${{ matrix.platform }}-${{ inputs.label_suffix }}/model.sha256"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ohs-eval-${{ matrix.platform }}-${{ inputs.label_suffix }}
+          path: out
