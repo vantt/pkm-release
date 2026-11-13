@@ -52,6 +52,17 @@ jobs:
           cd "$RUNNER_TEMP/onnxruntime/build/Windows/Release"
           find . -name '*.lib' -printf '%s %p\n' | sort -k2 | tee "$GITHUB_WORKSPACE/ort-libs.txt" | grep -iE 're2|onnxruntime_common|cpuinfo|nsync|protobuf|onnx\.lib|onnx_proto' || true
           echo "libs: $(wc -l < "$GITHUB_WORKSPACE/ort-libs.txt")"
+      # ONNX Runtime 1.31 không còn dùng re2, nhưng ort-sys rc.15 luôn link `re2` khi liên kết tĩnh bản tự dựng:
+      # đặt một re2.lib rỗng ở chỗ nó tìm (`_deps/re2-build/Release`).
+      - name: Empty re2.lib for ort-sys
+        shell: cmd
+        run: |
+          set D=%RUNNER_TEMP%\onnxruntime\build\Windows\Release\_deps\re2-build\Release
+          mkdir "%D%"
+          for /f "usebackq delims=" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath`) do set VS=%%i
+          call "%VS%\VC\Auxiliary\Build\vcvars64.bat"
+          echo int pkm_re2_placeholder;> "%D%\empty.c"
+          cl /nologo /c /MT /Fo"%D%\empty.obj" "%D%\empty.c" && lib /nologo /OUT:"%D%\re2.lib" "%D%\empty.obj"
       - name: Model files
         run: |
           M="$RUNNER_TEMP/e5"; mkdir -p "$M/onnx"
