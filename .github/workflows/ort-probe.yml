@@ -54,7 +54,11 @@ jobs:
         working-directory: ort-probe
         run: |
           if [ -n "${{ matrix.rustflags }}" ]; then export RUSTFLAGS="${{ matrix.rustflags }}"; fi
-          if [ -n "${{ matrix.macos_target }}" ]; then export MACOSX_DEPLOYMENT_TARGET="${{ matrix.macos_target }}"; fi
+          if [ -n "${{ matrix.macos_target }}" ]; then
+            export MACOSX_DEPLOYMENT_TARGET="${{ matrix.macos_target }}"
+            # ORT dựng sẵn gọi `__isPlatformVersionAtLeast` (compiler-rt của clang), rustc không tự link thư viện này.
+            export RUSTFLAGS="-C link-arg=$(xcrun clang --print-file-name=lib/darwin/libclang_rt.osx.a)"
+          fi
           F="--features static"; [ "${{ matrix.variant }}" = dynamic ] && F="--features dynamic"
           start=$(date +%s); cargo build --release --locked --no-default-features $F 2>&1 | tail -15
           echo "build_seconds=$(( $(date +%s) - start ))" >> "$GITHUB_ENV"

@@ -9,7 +9,6 @@ use std::time::Instant;
 
 use ndarray::Array2;
 use ort::session::Session;
-use ort::session::builder::GraphOptimizationLevel;
 use ort::value::TensorRef;
 use serde_json::{Value, json};
 use tokenizers::Tokenizer;
@@ -21,8 +20,9 @@ fn rss() -> Option<usize> {
 }
 
 fn session(env: &ort::environment::Environment, model: &Path, threads: usize) -> Res<Session> {
+    // Mức tối ưu đồ thị để mặc định của ONNX Runtime (tối ưu toàn phần): giá trị enum của `ort` mới không hợp với
+    // thư viện 1.22 nạp động.
     Ok(Session::builder(env)?
-        .with_optimization_level(GraphOptimizationLevel::Level3)?
         .with_intra_threads(threads)?
         .commit_from_file(model.join("onnx/model_quantized.onnx"))?)
 }
