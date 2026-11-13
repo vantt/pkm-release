@@ -25,7 +25,7 @@ jobs:
           git clone -q --depth 1 --branch "${{ inputs.ort_tag }}" https://github.com/microsoft/onnxruntime.git "$RUNNER_TEMP/onnxruntime"
           git -C "$RUNNER_TEMP/onnxruntime" rev-parse HEAD | tee ort-commit.txt
       # Bản dựng mất khoảng 45 phút: giữ thư viện đã dựng theo tag và cờ dựng.
-      - uses: actions/cache@v4
+      - uses: actions/cache/restore@v4
         id: ortcache
         with:
           path: ${{ runner.temp }}/onnxruntime/build/Windows/Release
@@ -41,6 +41,12 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           "ort_build_minutes=$([int]((Get-Date) - $start).TotalMinutes)" | Out-File -Append $env:GITHUB_ENV
           Get-ChildItem build\Windows\Release\Release\*.lib | Select-Object Name, Length | Format-Table
+      # Lưu ngay sau khi dựng (không chờ cả job xanh), để lần sau không dựng lại khi bước link còn hỏng.
+      - uses: actions/cache/save@v4
+        if: steps.ortcache.outputs.cache-hit != 'true'
+        with:
+          path: ${{ runner.temp }}/onnxruntime/build/Windows/Release
+          key: ort-win-mt-${{ inputs.ort_tag }}-v1
       - name: Static libraries produced
         run: |
           cd "$RUNNER_TEMP/onnxruntime/build/Windows/Release"
