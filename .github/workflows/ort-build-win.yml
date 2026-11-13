@@ -24,7 +24,14 @@ jobs:
         run: |
           git clone -q --depth 1 --branch "${{ inputs.ort_tag }}" https://github.com/microsoft/onnxruntime.git "$RUNNER_TEMP/onnxruntime"
           git -C "$RUNNER_TEMP/onnxruntime" rev-parse HEAD | tee ort-commit.txt
+      # Bản dựng mất khoảng 45 phút: giữ thư viện đã dựng theo tag và cờ dựng.
+      - uses: actions/cache@v4
+        id: ortcache
+        with:
+          path: ${{ runner.temp }}/onnxruntime/build/Windows/Release
+          key: ort-win-mt-${{ inputs.ort_tag }}-v1
       - name: Build ONNX Runtime (Release, static CRT, no tests)
+        if: steps.ortcache.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
           cd "$env:RUNNER_TEMP/onnxruntime"
@@ -34,6 +41,11 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           "ort_build_minutes=$([int]((Get-Date) - $start).TotalMinutes)" | Out-File -Append $env:GITHUB_ENV
           Get-ChildItem build\Windows\Release\Release\*.lib | Select-Object Name, Length | Format-Table
+      - name: Static libraries produced
+        run: |
+          cd "$RUNNER_TEMP/onnxruntime/build/Windows/Release"
+          find . -name '*.lib' -printf '%s %p\n' | sort -k2 | tee "$GITHUB_WORKSPACE/ort-libs.txt" | grep -iE 're2|onnxruntime_common|cpuinfo|nsync|protobuf|onnx\.lib|onnx_proto' || true
+          echo "libs: $(wc -l < "$GITHUB_WORKSPACE/ort-libs.txt")"
       - name: Model files
         run: |
           M="$RUNNER_TEMP/e5"; mkdir -p "$M/onnx"
@@ -65,3 +77,4 @@ jobs:
           path: |
             ort-probe/result-*.json
             ort-probe/deps.txt
+            ort-libs.txt
