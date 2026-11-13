@@ -1,0 +1,24 @@
+[package]
+name = "ort-probe"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+ort = { version = "=2.0.0-rc.15", default-features = false, features = ["std", "ndarray", "api-17"] }
+ndarray = "0.17"
+tokenizers = { version = "=0.22.2", default-features = false, features = ["fancy-regex"] }
+serde_json = "1"
+memory-stats = "1"
+
+[features]
+default = ["static"]
+# ONNX Runtime liên kết tĩnh từ bản dựng sẵn của pyke (download-binaries lúc build).
+static = ["ort/download-binaries", "ort/tls-rustls"]
+# ONNX Runtime nạp lúc chạy từ thư viện động (ORT_DYLIB_PATH).
+dynamic = ["ort/load-dynamic"]
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+strip = true
