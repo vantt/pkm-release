@@ -1,0 +1,66 @@
+name: ort-build-win
+# Build ONNX Runtime from source on Windows with the static CRT (/MT) and link it statically into ort-probe, which
+# keeps the static CRT of pkm.exe. ort 2.0.0-rc.15 pairs with ONNX Runtime 1.31.
+on:
+  workflow_dispatch:
+    inputs:
+      ort_tag:
+        default: v1.31.1
+permissions:
+  contents: read
+defaults:
+  run:
+    shell: bash
+jobs:
+  build:
+    runs-on: windows-2025
+    timeout-minutes: 300
+    env:
+      MODEL_COMMIT: 761b726dd34fb83930e26aab4e9ac3899aa1fa78
+    steps:
+      - uses: actions/checkout@v4
+      - name: ONNX Runtime source
+        run: |
+          git clone -q --depth 1 --branch "${{ inputs.ort_tag }}" https://github.com/microsoft/onnxruntime.git "$RUNNER_TEMP/onnxruntime"
+          git -C "$RUNNER_TEMP/onnxruntime" rev-parse HEAD | tee ort-commit.txt
+      - name: Build ONNX Runtime (Release, static CRT, no tests)
+        shell: pwsh
+        run: |
+          cd "$env:RUNNER_TEMP/onnxruntime"
+          $start = Get-Date
+          .\build.bat --config Release --parallel --skip_tests --enable_msvc_static_runtime `
+            --compile_no_warning_as_error --cmake_extra_defines onnxruntime_BUILD_UNIT_TESTS=OFF
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "ort_build_minutes=$([int]((Get-Date) - $start).TotalMinutes)" | Out-File -Append $env:GITHUB_ENV
+          Get-ChildItem build\Windows\Release\Release\*.lib | Select-Object Name, Length | Format-Table
+      - name: Model files
+        run: |
+          M="$RUNNER_TEMP/e5"; mkdir -p "$M/onnx"
+          for f in config.json tokenizer.json tokenizer_config.json special_tokens_map.json onnx/model_quantized.onnx; do
+            curl -sfL -o "$M/$f" "https://huggingface.co/Xenova/multilingual-e5-small/resolve/$MODEL_COMMIT/$f"
+          done
+      - name: Build ort-probe against it (static CRT from .cargo/config.toml)
+        working-directory: ort-probe
+        run: |
+          export ORT_LIB_LOCATION="$RUNNER_TEMP/onnxruntime/build/Windows/Release"
+          cargo build --release --locked --no-default-features --features system 2>&1 | tail -20
+      - name: Dependencies and run
+        working-directory: ort-probe
+        run: |
+          D=$(find "/c/Program Files/Microsoft Visual Studio" -name dumpbin.exe -path '*Hostx64/x64*' 2>/dev/null | head -1)
+          "$D" -nologo -dependents target/release/ort-probe.exe | tee deps.txt
+          target/release/ort-probe.exe "$RUNNER_TEMP/e5" 1,4 > result-win32-x64-static-crt-static-source.json
+          node -e '
+            const fs=require("fs"); const r=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));
+            r.variant="win32-x64-static-crt-static-source"; r.deps=fs.readFileSync("deps.txt","utf8");
+            r.ort_build_minutes=Number(process.env.ort_build_minutes); r.ort_commit=fs.readFileSync("../ort-commit.txt","utf8").trim();
+            fs.writeFileSync(process.argv[1], JSON.stringify(r,null,2));
+            console.log(JSON.stringify({bin:r.binary_bytes, golden:r.golden, timing:r.timing, minutes:r.ort_build_minutes}, null, 1));' \
+            result-win32-x64-static-crt-static-source.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ort-build-win
+          path: |
+            ort-probe/result-*.json
+            ort-probe/deps.txt
