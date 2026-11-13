@@ -13,7 +13,8 @@ defaults:
     shell: bash
 jobs:
   build:
-    runs-on: windows-2025
+    # build.bat của ORT mặc định sinh dự án Visual Studio 17 2022: runner windows-2022 có sẵn bản đó.
+    runs-on: windows-2022
     timeout-minutes: 300
     env:
       MODEL_COMMIT: 761b726dd34fb83930e26aab4e9ac3899aa1fa78
