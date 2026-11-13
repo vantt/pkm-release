@@ -28,7 +28,8 @@ if (!git('-C', ohs, 'rev-parse', 'HEAD').startsWith(OHS_COMMIT)) throw new Error
 if (git('-C', otf, 'rev-parse', 'HEAD') !== git('-C', otf, 'rev-parse', 'v0.12.0^{commit}'))
   throw new Error('--otf phải ở v0.12.0');
 
-const node = path.join(bundle, 'node', 'bin', process.platform === 'win32' ? 'node.exe' : 'node');
+const node =
+  process.platform === 'win32' ? path.join(bundle, 'node', 'node.exe') : path.join(bundle, 'node', 'bin', 'node');
 const run = (argv) => {
   const r = spawnSync(node, argv, { stdio: ['ignore', 'ignore', 'inherit'] });
   if (r.status !== 0) throw new Error(`lỗi: ${argv.join(' ')}`);

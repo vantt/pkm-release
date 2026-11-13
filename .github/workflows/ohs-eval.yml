@@ -7,6 +7,9 @@ on:
         default: '1'
 permissions:
   contents: read
+defaults:
+  run:
+    shell: bash
 jobs:
   eval:
     strategy:
@@ -15,13 +18,16 @@ jobs:
         include:
           - os: macos-15
             platform: darwin-arm64
-          - os: macos-15-intel
-            platform: darwin-x64
+            archive: tar.gz
+          - os: windows-2025
+            platform: win32-x64
+            archive: zip
     runs-on: ${{ matrix.os }}
     env:
       OHS_VERSION: 0.17.2-vantt.8
       OHS_COMMIT: 294902225b903113ff089bf63af5c8aa1fc8a50d
       GH_TOKEN: ${{ github.token }}
+      LABEL: ${{ matrix.platform }}-${{ inputs.label_suffix }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -29,13 +35,17 @@ jobs:
           node-version: '22'
       - name: OHS bundle
         run: |
-          gh release download "v$OHS_VERSION" -R vantt/obsidian-hybrid-search \
-            -p "ohs-$OHS_VERSION-${{ matrix.platform }}.tar.gz*" -D "$RUNNER_TEMP"
+          A="ohs-$OHS_VERSION-${{ matrix.platform }}.${{ matrix.archive }}"
+          gh release download "v$OHS_VERSION" -R vantt/obsidian-hybrid-search -p "$A" -p "$A.sha256" -D "$RUNNER_TEMP"
           cd "$RUNNER_TEMP"
-          shasum -a 256 -c "ohs-$OHS_VERSION-${{ matrix.platform }}.tar.gz.sha256"
-          tar xzf "ohs-$OHS_VERSION-${{ matrix.platform }}.tar.gz"
+          want=$(cut -d' ' -f1 "$A.sha256")
+          got=$(node -e "const c=require('crypto');process.stdout.write(c.createHash('sha256').update(require('fs').readFileSync(process.argv[1])).digest('hex'))" "$A")
+          test "$want" = "$got"
+          if [ "${{ matrix.archive }}" = zip ]; then unzip -q "$A"; else tar xzf "$A"; fi
+          ls
       - name: OHS source and fixture
         run: |
+          git config --global core.autocrlf false
           git init -q "$RUNNER_TEMP/ohs"
           git -C "$RUNNER_TEMP/ohs" fetch -q --depth 1 https://github.com/vantt/obsidian-hybrid-search.git "$OHS_COMMIT"
           git -C "$RUNNER_TEMP/ohs" checkout -q --detach FETCH_HEAD
@@ -44,16 +54,17 @@ jobs:
       - name: Eval
         run: |
           mkdir -p "$RUNNER_TEMP/tmp"
-          TMPDIR="$RUNNER_TEMP/tmp" node ohs-golden/eval/run-all.mjs \
+          TMPDIR="$RUNNER_TEMP/tmp" TEMP="$RUNNER_TEMP/tmp" TMP="$RUNNER_TEMP/tmp" node ohs-golden/eval/run-all.mjs \
             --bundle "$RUNNER_TEMP/ohs-$OHS_VERSION-${{ matrix.platform }}" \
-            --ohs-repo "$RUNNER_TEMP/ohs" --otf "$RUNNER_TEMP/otf" \
-            --out out --label "${{ matrix.platform }}-${{ inputs.label_suffix }}"
+            --ohs-repo "$RUNNER_TEMP/ohs" --otf "$RUNNER_TEMP/otf" --out out --label "$LABEL"
       - name: Model files
         run: |
           cd ~/.cache/huggingface/Xenova/multilingual-e5-small
-          shasum -a 256 config.json tokenizer.json tokenizer_config.json onnx/model_quantized.onnx \
-            | tee "$GITHUB_WORKSPACE/out/${{ matrix.platform }}-${{ inputs.label_suffix }}/model.sha256"
+          for f in config.json tokenizer.json tokenizer_config.json onnx/model_quantized.onnx; do
+            node -e "const c=require('crypto');console.log(c.createHash('sha256').update(require('fs').readFileSync(process.argv[1])).digest('hex')+'  '+process.argv[1])" "$f"
+          done | tee "$GITHUB_WORKSPACE/out/$LABEL/model.sha256"
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
-          name: ohs-eval-${{ matrix.platform }}-${{ inputs.label_suffix }}
+          name: ohs-eval-${{ env.LABEL }}
           path: out
