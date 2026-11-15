@@ -2,16 +2,20 @@
 //
 //   <bundle>/node/bin/node tools/ohs-golden/eval/run.mjs --bundle <bundle> --corpus <tên> --vault <vault> \
 //       --golden <golden-set.json> --pack vi|de|none [--pack-dir <thư mục gói de đã dựng>] \
-//       [--index parallel|ordered] --out <thư mục>
+//       [--index parallel|ordered] [--mode hybrid|fulltext] --out <thư mục>
 //
 // Câu chạy như `eval/evaluate.ts` của OHS (`search(query, {mode: 'hybrid', limit: 10})`), thêm `explain` để có hạng
 // từng nhánh; một lượt nữa với `limit: 50` để biết hạng của note đúng khi nó rơi khỏi top 10. Chỉ số theo
 // `eval/metrics.ts` của OHS (đường dẫn so ở dạng NFD như OHS lưu).
 //
+// `--mode fulltext` chạy cả hai lượt ở chế độ `fulltext` của OHS (BM25 và view, không vector) và ghi vào thư mục con
+// `fulltext/` của `--out`; cổng G4 "top 10 trùng" so với mốc này. Index dựng như nhau ở hai chế độ.
+//
 // `--index parallel` (mặc định) index như OHS chạy thật (song song, thứ tự note vào DB đổi giữa các lần): dùng để đo
 // mức nhiễu. `ordered` nạp note tuần tự theo đường dẫn trước (như golden ngôn ngữ).
 //
-// Ghi `<out>/<corpus>/per-query.jsonl` và `summary.json`.
+// Ghi `<out>/<corpus>/per-query.jsonl` và `summary.json` (`--mode fulltext`: `<out>/fulltext/<corpus>/`, summary có
+// thêm `mode`).
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -24,8 +28,10 @@ const bundle = openBundle(a.bundle);
 for (const k of ['corpus', 'vault', 'golden', 'out', 'pack']) if (!a[k]) throw new Error(`thiếu --${k}`);
 const packDir = { vi: bundle.langVi, de: a['pack-dir'] && path.resolve(a['pack-dir']), none: undefined }[a.pack];
 if (a.pack !== 'none' && !packDir) throw new Error(`gói ${a.pack}: thiếu --pack-dir`);
+const mode = a.mode ?? 'hybrid';
+if (!['hybrid', 'fulltext'].includes(mode)) throw new Error(`--mode ${mode}: chỉ hybrid hay fulltext`);
 const golden = JSON.parse(fs.readFileSync(a.golden, 'utf8'));
-const outDir = path.resolve(a.out, a.corpus);
+const outDir = mode === 'hybrid' ? path.resolve(a.out, a.corpus) : path.resolve(a.out, mode, a.corpus);
 
 const scratch = scratchVault(path.resolve(a.vault));
 setOhsEnv({ vault: scratch.vault, db: scratch.db, langPack: packDir });
@@ -74,8 +80,8 @@ function metrics(paths, relevant, partial) {
 const rows = [];
 try {
   for (const q of golden) {
-    const hits = await search(q.query, { mode: 'hybrid', limit: K, explain: true, scope: q.scope });
-    const deep = await search(q.query, { mode: 'hybrid', limit: DEEP, scope: q.scope });
+    const hits = await search(q.query, { mode, limit: K, explain: true, scope: q.scope });
+    const deep = await search(q.query, { mode, limit: DEEP, scope: q.scope });
     const deepPaths = deep.map((h) => nfd(h.path));
     rows.push({
       id: q.id,
@@ -119,8 +125,10 @@ writeJson(path.join(outDir, 'summary.json'), {
   corpus: a.corpus,
   pack: pack ? { id: pack.id ?? a.pack, version: pack.version ?? null } : null,
   index: a.index === 'ordered' ? 'ordered' : 'parallel',
+  ...(mode === 'hybrid' ? {} : { mode }),
   k: K,
   all: aggregate(rows),
   by_category: Object.fromEntries(categories.map((c) => [c, aggregate(rows.filter((r) => r.category === c))])),
 });
-console.error(`${a.corpus}: nDCG@5 ${aggregate(rows).ndcg_5.toFixed(3)} trên ${rows.length} câu -> ${outDir}`);
+const label = mode === 'hybrid' ? a.corpus : `${a.corpus} (${mode})`;
+console.error(`${label}: nDCG@5 ${aggregate(rows).ndcg_5.toFixed(3)} trên ${rows.length} câu -> ${outDir}`);

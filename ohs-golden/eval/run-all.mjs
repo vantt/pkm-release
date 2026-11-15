@@ -1,7 +1,11 @@
 // Một lượt eval OHS trên bốn corpus, ghi vào `<out>/<nhãn>/<corpus>/`:
 //
 //   node tools/ohs-golden/eval/run-all.mjs --bundle <bundle> --ohs-repo <checkout OHS ở 2949022> \
-//       --otf <checkout obsidian-test-fixture ở v0.12.0> --out <thư mục> --label <nhãn> [--index parallel|ordered]
+//       --otf <checkout obsidian-test-fixture ở v0.12.0> --out <thư mục> --label <nhãn> [--index parallel|ordered] \
+//       [--mode hybrid|fulltext]
+//
+// `--mode fulltext` ghi vào `<out>/<nhãn>/fulltext/<corpus>/` và `<out>/<nhãn>/fulltext/run.json` (có `mode`), không
+// đụng kết quả hybrid cùng nhãn.
 //
 // Corpus: `vi-search` (fixture v0.12.0, 315 câu, gói vi), `smoke` (smoke-vault, 16 câu, gói vi), `obsidian-help`
 // (tài liệu tiếng Anh của Obsidian ở revision OHS ghim, 58 câu, gói vi như pkm luôn bật), `de` (vault eval của
@@ -23,6 +27,9 @@ const ohs = path.resolve(a['ohs-repo']);
 const otf = path.resolve(a.otf);
 const out = path.resolve(a.out, a.label);
 const index = a.index === 'ordered' ? 'ordered' : 'parallel';
+const mode = a.mode ?? 'hybrid';
+if (!['hybrid', 'fulltext'].includes(mode)) throw new Error(`--mode ${mode}: chỉ hybrid hay fulltext`);
+const modeOut = mode === 'hybrid' ? out : path.join(out, mode);
 const git = (...argv) => execFileSync('git', argv, { encoding: 'utf8' }).trim();
 if (!git('-C', ohs, 'rev-parse', 'HEAD').startsWith(OHS_COMMIT)) throw new Error(`--ohs-repo phải ở ${OHS_COMMIT}`);
 if (git('-C', otf, 'rev-parse', 'HEAD') !== git('-C', otf, 'rev-parse', 'v0.12.0^{commit}'))
@@ -66,15 +73,19 @@ try {
     ['obsidian-help', ohVault, path.join(ohs, 'fixtures', 'obsidian-help', 'golden-set.json'), 'vi'],
     ['de', path.join(de, 'vault'), path.join(de, 'golden-set.json'), 'de'],
   ];
-  fs.rmSync(out, { recursive: true, force: true });
+  // Lượt hybrid không xoá thư mục `fulltext/` cùng nhãn.
+  if (fs.existsSync(modeOut))
+    for (const e of fs.readdirSync(modeOut))
+      if (mode !== 'hybrid' || e !== 'fulltext') fs.rmSync(path.join(modeOut, e), { recursive: true, force: true });
   for (const [name, vault, golden, pack] of jobs) {
     run([path.join(here, 'run.mjs'), '--bundle', bundle, '--corpus', name, '--vault', vault, '--golden', golden,
-      '--pack', pack, ...(pack === 'de' ? ['--pack-dir', dePack] : []), '--index', index, '--out', out]);
+      '--pack', pack, ...(pack === 'de' ? ['--pack-dir', dePack] : []), '--index', index, '--mode', mode, '--out', out]);
   }
   const manifest = JSON.parse(fs.readFileSync(path.join(bundle, 'MANIFEST.json'), 'utf8'));
-  writeJson(path.join(out, 'run.json'), {
+  writeJson(path.join(modeOut, 'run.json'), {
     label: a.label,
     index,
+    ...(mode === 'hybrid' ? {} : { mode }),
     ohs: manifest.version,
     platform: manifest.platform,
     node: manifest.node_version,

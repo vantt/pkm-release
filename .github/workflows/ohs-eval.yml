@@ -5,6 +5,9 @@ on:
       label_suffix:
         description: suffix for the run label
         default: '1'
+      mode:
+        description: hybrid or fulltext
+        default: hybrid
 permissions:
   contents: read
 defaults:
@@ -56,7 +59,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/tmp"
           TMPDIR="$RUNNER_TEMP/tmp" TEMP="$RUNNER_TEMP/tmp" TMP="$RUNNER_TEMP/tmp" node ohs-golden/eval/run-all.mjs \
             --bundle "$RUNNER_TEMP/ohs-$OHS_VERSION-${{ matrix.platform }}" \
-            --ohs-repo "$RUNNER_TEMP/ohs" --otf "$RUNNER_TEMP/otf" --out out --label "$LABEL"
+            --ohs-repo "$RUNNER_TEMP/ohs" --otf "$RUNNER_TEMP/otf" --out out --label "$LABEL" --mode "${{ inputs.mode }}"
       - name: Model files
         run: |
           cd ~/.cache/huggingface/Xenova/multilingual-e5-small
@@ -66,5 +69,5 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: ohs-eval-${{ env.LABEL }}
+          name: ohs-eval-${{ env.LABEL }}-${{ inputs.mode }}
           path: out
