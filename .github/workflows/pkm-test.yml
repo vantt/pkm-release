@@ -48,8 +48,10 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/ort-win
         if: runner.os == 'Windows'
-      - name: cargo test --workspace
+      - name: cargo test
         working-directory: pkm-src
+        env:
+          ARGS: ${{ inputs.args }}
         run: |
           if [ "$RUNNER_OS" = macOS ]; then
             export MACOSX_DEPLOYMENT_TARGET=13.4
@@ -57,8 +59,8 @@ jobs:
           fi
           L="$RUNNER_TEMP/test.log"
           set +e
-          # shellcheck disable=SC2086 # args là danh sách cờ của cargo test
-          cargo test ${{ inputs.args }} --locked --no-fail-fast > "$L" 2>&1
+          # shellcheck disable=SC2086 # ARGS là danh sách cờ của cargo test
+          cargo test $ARGS --locked --no-fail-fast > "$L" 2>&1
           code=$?
           set -e
           # Chỉ dòng tổng kết, tên test hỏng và dòng `error…:` của trình biên dịch.
