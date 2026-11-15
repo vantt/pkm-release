@@ -13,5 +13,6 @@ and uploads only eval results.
   `ohs-golden/eval/corpora.mjs`; Windows links the ONNX Runtime built by `ort-build-win` (same cache key, through
   `.github/actions/ort-win`).
 - `.github/workflows/pkm-test.yml`: `cargo test --workspace` of pkm on macOS arm64 and Windows x64, same token; the public
-  log shows only test summaries and failing test names.
+  log shows only test summaries and failing test names; the full log is uploaded only sealed with `ci/log-key.pub.pem`
+  (`ci/seal.sh`: per-run AES key wrapped with RSA-OAEP), readable only by the holder of the private key.
 - `ort-probe/`, `.github/workflows/ort-probe.yml`: builds ONNX Runtime (via the `ort` crate) statically on linux-x64, win32-x64 (static CRT), darwin-arm64 and darwin-x64, loads multilingual-e5-small and compares token ids and vectors with the transformers.js golden.

@@ -2,7 +2,7 @@ name: pkm-test
 # `cargo test --workspace` của pkm trên Windows x64 và macOS arm64 (máy dev và CI của pkm chỉ có linux). Mã pkm không nằm
 # ở repo này: job checkout repo private lúc chạy bằng token chỉ đọc (secret PKM_READ_TOKEN). Đầu ra của cargo ghi vào file
 # ngoài workspace; log công khai chỉ in dòng tổng kết và tên test hỏng, không in nội dung lỗi (có thể chứa đoạn mã);
-# không tải gì lên.
+# log đầy đủ chỉ tải lên khi đã mã hoá bằng ci/log-key.pub.pem (ci/seal.sh).
 on:
   workflow_dispatch:
     inputs:
@@ -55,4 +55,16 @@ jobs:
           grep -E '^test result:|^error(\[E[0-9]+\])?: ' "$L" | cut -c1-200 || true
           grep -E ' \.\.\. FAILED$|^    [A-Za-z0-9_:]+$' "$L" | sort -u | cut -c1-200 || true
           echo "cargo test exit $code"
-          exit $code
+          echo "$code" > "$RUNNER_TEMP/test.exit"
+      # Log đầy đủ chỉ đi ra ngoài khi đã mã hoá (ci/seal.sh): người giữ khoá riêng mới đọc được.
+      - name: Seal the full log
+        if: always()
+        run: ci/seal.sh "$RUNNER_TEMP/test.log" sealed
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pkm-test-${{ matrix.platform }}-sealed
+          path: sealed
+          retention-days: 14
+      - name: Result
+        run: exit "$(cat "$RUNNER_TEMP/test.exit")"
