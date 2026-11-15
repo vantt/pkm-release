@@ -115,6 +115,15 @@ jobs:
                 --model-root "$RUNNER_TEMP/models" --out "$GITHUB_WORKSPACE/out/run" --work "$RUNNER_TEMP/work" --mode "$mode"
             done
           done
+      # Vector của model int8 lệch theo CPU: ghi CPU của runner để đọc lệch so với mốc (mốc ghi CPU ở run.json).
+      - name: Runner CPU
+        run: |
+          case "$RUNNER_OS" in
+            macOS) cpu=$(sysctl -n machdep.cpu.brand_string) ;;
+            Windows) cpu=$(powershell -NoProfile -Command "(Get-CimInstance Win32_Processor | Select-Object -First 1).Name") ;;
+            *) cpu=$(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2) ;;
+          esac
+          echo "$cpu" | tee "$GITHUB_WORKSPACE/out/cpu.txt"
       - name: Compare with the OHS baseline
         working-directory: pkm-src
         run: |
