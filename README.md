@@ -10,5 +10,8 @@ and uploads only eval results.
   `mode` hybrid or fulltext.
 - `.github/workflows/pkm-eval.yml`: pkm's search quality gate (G4) on macOS arm64 and Windows x64 against the OHS baseline
   of the same platform; needs the `PKM_READ_TOKEN` secret (fine-grained, `vantt/pkm`, Contents: read). Corpora come from
-  `ohs-golden/eval/corpora.mjs`; Windows links the ONNX Runtime built by `ort-build-win` (same cache key).
+  `ohs-golden/eval/corpora.mjs`; Windows links the ONNX Runtime built by `ort-build-win` (same cache key, through
+  `.github/actions/ort-win`).
+- `.github/workflows/pkm-test.yml`: `cargo test --workspace` of pkm on macOS arm64 and Windows x64, same token; the public
+  log shows only test summaries and failing test names.
 - `ort-probe/`, `.github/workflows/ort-probe.yml`: builds ONNX Runtime (via the `ort` crate) statically on linux-x64, win32-x64 (static CRT), darwin-arm64 and darwin-x64, loads multilingual-e5-small and compares token ids and vectors with the transformers.js golden.

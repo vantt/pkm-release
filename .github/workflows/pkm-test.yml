@@ -1,0 +1,58 @@
+name: pkm-test
+# `cargo test --workspace` của pkm trên Windows x64 và macOS arm64 (máy dev và CI của pkm chỉ có linux). Mã pkm không nằm
+# ở repo này: job checkout repo private lúc chạy bằng token chỉ đọc (secret PKM_READ_TOKEN). Đầu ra của cargo ghi vào file
+# ngoài workspace; log công khai chỉ in dòng tổng kết và tên test hỏng, không in nội dung lỗi (có thể chứa đoạn mã);
+# không tải gì lên.
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: tag or commit of vantt/pkm
+        default: main
+permissions:
+  contents: read
+defaults:
+  run:
+    shell: bash
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            platform: darwin-arm64
+          - os: windows-2022
+            platform: win32-x64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 300
+    env:
+      PKM_NO_OHS: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: vantt/pkm
+          ref: ${{ inputs.ref }}
+          token: ${{ secrets.PKM_READ_TOKEN }}
+          path: pkm-src
+          persist-credentials: false
+      - uses: ./.github/actions/ort-win
+        if: runner.os == 'Windows'
+      - name: cargo test --workspace
+        working-directory: pkm-src
+        run: |
+          if [ "$RUNNER_OS" = macOS ]; then
+            export MACOSX_DEPLOYMENT_TARGET=13.4
+            export RUSTFLAGS="-C link-arg=$(xcrun clang --print-file-name=lib/darwin/libclang_rt.osx.a)"
+          fi
+          L="$RUNNER_TEMP/test.log"
+          set +e
+          cargo test --workspace --locked --no-fail-fast > "$L" 2>&1
+          code=$?
+          set -e
+          # Chỉ dòng tổng kết, tên test hỏng và dòng `error…:` của trình biên dịch.
+          grep -E '^test result:|^error(\[E[0-9]+\])?: ' "$L" | cut -c1-200 || true
+          grep -E ' \.\.\. FAILED$|^    [A-Za-z0-9_:]+$' "$L" | sort -u | cut -c1-200 || true
+          echo "cargo test exit $code"
+          exit $code
