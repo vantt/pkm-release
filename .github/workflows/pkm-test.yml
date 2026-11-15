@@ -9,6 +9,14 @@ on:
       ref:
         description: tag or commit of vantt/pkm
         default: main
+      args:
+        description: what cargo test runs (default the whole workspace), e.g. "-p pkm --test cli_commands"
+        default: --workspace
+      os:
+        description: which runners
+        type: choice
+        options: [both, windows, macos]
+        default: both
 permissions:
   contents: read
 defaults:
@@ -24,6 +32,7 @@ jobs:
             platform: darwin-arm64
           - os: windows-2022
             platform: win32-x64
+    if: inputs.os == 'both' || (inputs.os == 'windows' && matrix.platform == 'win32-x64') || (inputs.os == 'macos' && matrix.platform == 'darwin-arm64')
     runs-on: ${{ matrix.os }}
     timeout-minutes: 300
     env:
@@ -48,7 +57,8 @@ jobs:
           fi
           L="$RUNNER_TEMP/test.log"
           set +e
-          cargo test --workspace --locked --no-fail-fast > "$L" 2>&1
+          # shellcheck disable=SC2086 # args là danh sách cờ của cargo test
+          cargo test ${{ inputs.args }} --locked --no-fail-fast > "$L" 2>&1
           code=$?
           set -e
           # Chỉ dòng tổng kết, tên test hỏng và dòng `error…:` của trình biên dịch.
