@@ -26,13 +26,9 @@ jobs:
   test:
     strategy:
       fail-fast: false
+      # Chọn máy theo input `os` (matrix không dùng được trong `if` của job).
       matrix:
-        include:
-          - os: macos-15
-            platform: darwin-arm64
-          - os: windows-2022
-            platform: win32-x64
-    if: inputs.os == 'both' || (inputs.os == 'windows' && matrix.platform == 'win32-x64') || (inputs.os == 'macos' && matrix.platform == 'darwin-arm64')
+        include: ${{ fromJSON(inputs.os == 'windows' && '[{"os":"windows-2022","platform":"win32-x64"}]' || inputs.os == 'macos' && '[{"os":"macos-15","platform":"darwin-arm64"}]' || '[{"os":"macos-15","platform":"darwin-arm64"},{"os":"windows-2022","platform":"win32-x64"}]') }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 300
     env:
