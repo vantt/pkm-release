@@ -54,6 +54,9 @@ jobs:
             export RUSTFLAGS="-C link-arg=$(xcrun clang --print-file-name=lib/darwin/libclang_rt.osx.a)"
           fi
           L="$RUNNER_TEMP/test.log"
+          # Nguồn crate của mọi nền (không chỉ nền đang chạy): test giấy phép của pkm gọi `cargo tree --offline
+          # --target all`. Lỗi tải thì báo một dòng; test tự nói thiếu gì.
+          cargo fetch --locked > "$RUNNER_TEMP/fetch.log" 2>&1 || echo "cargo fetch lỗi (exit $?)"
           set +e
           # shellcheck disable=SC2086 # ARGS là danh sách cờ của cargo test
           cargo test $ARGS --locked --no-fail-fast > "$L" 2>&1
