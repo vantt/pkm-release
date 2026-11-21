@@ -8,9 +8,11 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: ONNX Runtime source
+    # Only the cached build tree is used below; the source clone is not needed (microsoft/onnxruntime is unreachable
+    # since 2026-11-22), so just make the parent directory the cache restores into.
+    - name: ONNX Runtime build directory
       shell: bash
-      run: git clone -q --depth 1 --branch "${{ inputs.ort_tag }}" https://github.com/microsoft/onnxruntime.git "$RUNNER_TEMP/onnxruntime"
+      run: mkdir -p "$RUNNER_TEMP/onnxruntime/build/Windows/Release"
     - uses: actions/cache/restore@v4
       with:
         path: ${{ runner.temp }}/onnxruntime/build/Windows/Release
