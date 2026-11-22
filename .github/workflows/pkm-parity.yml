@@ -1,0 +1,54 @@
+name: pkm-parity
+# Snapshot kg-solo của pkm trên một máy Linux khác máy dev: `bless_on_kg_solo_reproduces_the_committed_snapshot` và
+# `parity check`. Mã pkm không nằm ở repo này: job checkout repo private lúc chạy bằng token chỉ đọc (PKM_READ_TOKEN).
+# Log công khai chỉ in dòng tổng kết và tên mục lệch (vault là dữ liệu bịa của fixture, nhưng giữ cùng cách với pkm-test).
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: tag or commit of vantt/pkm
+        default: main
+permissions:
+  contents: read
+defaults:
+  run:
+    shell: bash
+jobs:
+  parity:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: vantt/pkm
+          ref: ${{ inputs.ref }}
+          token: ${{ secrets.PKM_READ_TOKEN }}
+          path: pkm-src
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Toolchain
+        working-directory: pkm-src
+        run: rustup toolchain install
+      - name: kg-solo vault
+        working-directory: pkm-src
+        run: |
+          args=$(cargo run -q --locked -p pkm-parity -- fixture-args)
+          npx --yes $args --out "$RUNNER_TEMP/kg-solo" > /dev/null
+      - name: Build pkm with the fake embedder
+        working-directory: pkm-src
+        run: cargo build -q --locked -p pkm --features test-embedder 2>&1 | grep -E '^error' | head -10 || true
+      - name: Snapshot test and parity check
+        working-directory: pkm-src
+        env:
+          PKM_KG_SOLO: ${{ runner.temp }}/kg-solo
+        run: |
+          set +e
+          cargo test --locked -p pkm-parity --test golden > "$RUNNER_TEMP/golden.log" 2>&1
+          echo "golden exit $?"
+          grep -E '^test result:|FAILED|panicked' "$RUNNER_TEMP/golden.log" | cut -c1-200
+          cargo run -q --locked -p pkm-parity -- check --vault "$RUNNER_TEMP/kg-solo" > "$RUNNER_TEMP/check.log" 2>&1
+          echo "check exit $?"
+          grep -E 'lệch|Tổng' "$RUNNER_TEMP/check.log" | cut -c1-200
+          lscpu | grep -E 'Model name|^CPU\(s\)'
