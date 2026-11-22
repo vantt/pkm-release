@@ -16,3 +16,9 @@ and uploads only eval results.
   log shows only test summaries and failing test names; the full log is uploaded only sealed with `ci/log-key.pub.pem`
   (`ci/seal.sh`: per-run AES key wrapped with RSA-OAEP), readable only by the holder of the private key.
 - `ort-probe/`, `.github/workflows/ort-probe.yml`: builds ONNX Runtime (via the `ort` crate) statically on linux-x64, win32-x64 (static CRT), darwin-arm64 and darwin-x64, loads multilingual-e5-small and compares token ids and vectors with the transformers.js golden.
+- `.github/workflows/pkm-win-binary.yml`: builds `pkm.exe` (release, static CRT, ONNX Runtime from the `ort-build-win` cache via
+  `.github/actions/ort-win-cached`), checks `dumpbin /dependents` for dynamic CRT imports, runs `pkm --version`, and uploads
+  `pkm.exe` only sealed (`ci/seal.sh`); decrypt with `ci/unseal.sh <file>.enc <file>.key.enc <private key> <out>` to run it on a
+  clean Windows machine (for example one without the VC++ Redistributable).
+- `ci/windows-local.ps1`: the `test`, `binary` and `eval` steps of the workflows for a developer's own Windows machine
+  (`-PkmSrc <checkout of vantt/pkm> -Mode test|binary|eval`). Written from the workflow steps and not yet run on a real machine.

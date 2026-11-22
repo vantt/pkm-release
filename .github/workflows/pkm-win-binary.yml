@@ -25,6 +25,13 @@ jobs:
           token: ${{ secrets.PKM_READ_TOKEN }}
           path: pkm-src
           persist-credentials: false
+      - name: Parse ci/windows-local.ps1
+        shell: pwsh
+        run: |
+          $errs = $null
+          [System.Management.Automation.Language.Parser]::ParseFile("$env:GITHUB_WORKSPACE\ci\windows-local.ps1", [ref]$null, [ref]$errs) | Out-Null
+          if ($errs) { $errs | ForEach-Object { $_.ToString() }; exit 1 }
+          "windows-local.ps1 parses"
       - uses: ./.github/actions/ort-win-cached
       - name: Build pkm.exe (release)
         working-directory: pkm-src
@@ -49,3 +56,12 @@ jobs:
         run: |
           ./target/release/pkm.exe --version
           ./target/release/pkm.exe version --json | head -c 400; echo
+      # pkm.exe (mã của repo private) chỉ đi ra ngoài khi đã mã hoá (ci/seal.sh), để chạy thử trên máy Windows sạch:
+      # tải artifact, giải bằng ci/unseal.sh với khoá riêng.
+      - name: Seal pkm.exe
+        run: ci/seal.sh pkm-src/target/release/pkm.exe sealed
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pkm-exe-sealed
+          path: sealed
+          retention-days: 7
