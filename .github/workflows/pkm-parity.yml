@@ -52,3 +52,7 @@ jobs:
           echo "check exit $?"
           grep -E 'lệch|Tổng' "$RUNNER_TEMP/check.log" | cut -c1-200
           lscpu | grep -E 'Model name|^CPU\(s\)'
+          # Bless vào thư mục tạm (không đụng snapshot) và in băm của search/calls.jsonl để so với máy khác.
+          mkdir -p "$RUNNER_TEMP/g" && cp -r tools/parity/golden/kg-solo "$RUNNER_TEMP/g/"
+          cargo run -q --locked -p pkm-parity -- bless --vault "$RUNNER_TEMP/kg-solo" --golden "$RUNNER_TEMP/g/kg-solo" > /dev/null 2>&1
+          sha256sum "$RUNNER_TEMP/g/kg-solo/search/calls.jsonl" tools/parity/golden/kg-solo/search/calls.jsonl | cut -c1-80
