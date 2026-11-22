@@ -1,0 +1,25 @@
+name: ort-cache-probe
+# Xem cache `ort-win-mt-*` của ort-build-win còn gì (re2, _deps, nguồn) khi microsoft/onnxruntime không còn tải được.
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/onnxruntime/build/Windows/Release
+          key: ort-win-mt-v1.31.1-v2
+          fail-on-cache-miss: true
+      - name: List
+        shell: bash
+        run: |
+          B="$RUNNER_TEMP/onnxruntime/build/Windows/Release"
+          du -sh "$B" | cut -f1
+          echo "-- libs"; find "$B" -name '*.lib' | sed "s|$B/||" | sort | head -80
+          echo "-- re2"; find "$B" -iname '*re2*' | sed "s|$B/||" | head -30
+          echo "-- _deps"; ls "$B/_deps" 2>/dev/null | head -60
+          echo "-- re2-src"; ls "$B/_deps/re2-src" 2>/dev/null | head -20
+          echo "-- cmake cache source dir"; grep -E "CMAKE_HOME_DIRECTORY|onnxruntime_SOURCE_DIR" "$B/CMakeCache.txt" | head
