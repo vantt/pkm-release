@@ -1,0 +1,51 @@
+name: pkm-win-binary
+# Binary Windows của pkm như bản phát hành: dựng `pkm.exe` release với CRT tĩnh và ORT tĩnh (ort-win-cached), kiểm
+# `dumpbin /dependents` không còn nhập CRT động (DECISIONS, "Binary Windows dùng CRT tĩnh") và chạy thử `pkm`.
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: tag or commit of vantt/pkm
+        default: main
+permissions:
+  contents: read
+defaults:
+  run:
+    shell: bash
+jobs:
+  binary:
+    runs-on: windows-2022
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: vantt/pkm
+          ref: ${{ inputs.ref }}
+          token: ${{ secrets.PKM_READ_TOKEN }}
+          path: pkm-src
+          persist-credentials: false
+      - uses: ./.github/actions/ort-win-cached
+      - name: Build pkm.exe (release)
+        working-directory: pkm-src
+        run: |
+          if ! cargo build --release --locked -p pkm > "$RUNNER_TEMP/build.log" 2>&1; then
+            grep -E '^error' "$RUNNER_TEMP/build.log" | cut -c1-200 | head -20; exit 1
+          fi
+          ls -la target/release/pkm.exe
+      - name: dumpbin /dependents
+        shell: pwsh
+        working-directory: pkm-src
+        run: |
+          $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
+          cmd /c "`"$vs\VC\Auxiliary\Build\vcvars64.bat`" && set" | ForEach-Object { if ($_ -match '^([^=]+)=(.*)$') { Set-Item -Path "env:$($Matches[1])" -Value $Matches[2] } }
+          $out = & dumpbin.exe /dependents target\release\pkm.exe
+          $out | Select-String '\.dll' | ForEach-Object { $_.Line.Trim() }
+          $bad = $out | Select-String -Pattern '(?i)vcruntime|msvcp|ucrtbase|api-ms-win-crt'
+          if ($bad) { Write-Host "CRT động còn nhập:"; $bad; exit 1 }
+          Write-Host "không nhập CRT động"
+      - name: Run pkm
+        working-directory: pkm-src
+        run: |
+          ./target/release/pkm.exe --version
+          ./target/release/pkm.exe version --json | head -c 400; echo
