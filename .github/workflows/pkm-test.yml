@@ -42,16 +42,14 @@ jobs:
           token: ${{ secrets.PKM_READ_TOKEN }}
           path: pkm-src
           persist-credentials: false
-      # Windows: bản dựng sẵn của pyke (CRT động) với `-C target-feature=-crt-static` (bước cargo bên dưới), vì nguồn
-      # microsoft/onnxruntime không còn tải được để dựng ORT CRT tĩnh (ort-win). Đo ở DECISIONS: "win32-x64 tĩnh, CRT động, CI".
+      # Windows: ONNX Runtime CRT tĩnh dựng từ cache của ort-build-win, không cần nguồn onnxruntime (ort-win-cached).
+      - uses: ./.github/actions/ort-win-cached
+        if: runner.os == 'Windows'
       - name: cargo test
         working-directory: pkm-src
         env:
           ARGS: ${{ inputs.args }}
         run: |
-          if [ "$RUNNER_OS" = Windows ]; then
-            export RUSTFLAGS="-C target-feature=-crt-static"
-          fi
           if [ "$RUNNER_OS" = macOS ]; then
             export MACOSX_DEPLOYMENT_TARGET=13.4
             export RUSTFLAGS="-C link-arg=$(xcrun clang --print-file-name=lib/darwin/libclang_rt.osx.a)"
