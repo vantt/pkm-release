@@ -1,0 +1,45 @@
+name: ort-win-cached
+description: >-
+  Like ort-win, without the onnxruntime source: the cached build tree of ort-build-win (static CRT) already holds the
+  re2 sources, so re2 is compiled directly with cl /MT, then every static library is combined into one onnxruntime.lib;
+  sets ORT_LIB_LOCATION. For when microsoft/onnxruntime cannot be cloned.
+inputs:
+  ort_tag:
+    default: v1.31.1
+runs:
+  using: composite
+  steps:
+    - name: Create the build directory the cache restores into
+      shell: bash
+      run: mkdir -p "$RUNNER_TEMP/onnxruntime/build/Windows/Release"
+    - uses: actions/cache/restore@v4
+      with:
+        path: ${{ runner.temp }}/onnxruntime/build/Windows/Release
+        key: ort-win-mt-${{ inputs.ort_tag }}-v2
+        fail-on-cache-miss: true
+    - name: Compile re2 with the static CRT and combine onnxruntime.lib
+      shell: pwsh
+      run: |
+        $B = "$env:RUNNER_TEMP\onnxruntime\build\Windows\Release"
+        $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
+        cmd /c "`"$vs\VC\Auxiliary\Build\vcvars64.bat`" && set" | ForEach-Object { if ($_ -match '^([^=]+)=(.*)$') { Set-Item -Path "env:$($Matches[1])" -Value $Matches[2] } }
+        if (-not (Get-ChildItem -Recurse $B -Filter re2.lib)) {
+          $src = "$B\_deps\re2-src"
+          $abs = (Get-ChildItem "$B\_deps" -Directory -Filter 'abseil_cpp-src' | Select-Object -First 1).FullName
+          Write-Host "re2 src: $src; abseil: $abs"
+          $files = @(Get-ChildItem "$src\re2\*.cc" | Where-Object { $_.Name -notmatch '_test\.cc$|fuzz|testing' } | ForEach-Object { $_.FullName }) + @("$src\util\rune.cc", "$src\util\strutil.cc")
+          $obj = "$env:RUNNER_TEMP\re2obj"; New-Item -ItemType Directory -Force $obj | Out-Null
+          & cl.exe /nologo /c /MT /O2 /std:c++17 /EHsc /DNOMINMAX /DWIN32_LEAN_AND_MEAN /DUNICODE /D_UNICODE "/I$src" "/I$abs" "/Fo$obj\" @files
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          New-Item -ItemType Directory -Force "$B\_deps\re2-build\Release" | Out-Null
+          & lib.exe /nologo "/OUT:$B\_deps\re2-build\Release\re2.lib" (Get-ChildItem "$obj\*.obj" | ForEach-Object { $_.FullName })
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        }
+        $out = "$env:RUNNER_TEMP\ort-lib"; New-Item -ItemType Directory -Force $out | Out-Null
+        $libs = Get-ChildItem -Recurse $B -Filter *.lib | Where-Object {
+          $_.Name -notmatch '^(libprotobuf|libprotoc|libupb|mat|sqlite3_bundled|zlib_bundled|gtest|gmock|onnx_test|onnxruntime_providers_shared|.*test.*)\.lib$'
+        } | ForEach-Object { $_.FullName }
+        $libexe = Get-ChildItem -Recurse "$vs\VC\Tools\MSVC" -Filter lib.exe | Where-Object { $_.FullName -match 'Hostx64\\x64' } | Select-Object -First 1
+        & $libexe.FullName /nologo /IGNORE:4006 /IGNORE:4221 "/OUT:$out\onnxruntime.lib" $libs
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        "ORT_LIB_LOCATION=$out" | Out-File -Append $env:GITHUB_ENV
