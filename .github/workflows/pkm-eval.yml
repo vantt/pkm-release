@@ -56,13 +56,15 @@ jobs:
           for f in config.json tokenizer.json tokenizer_config.json special_tokens_map.json onnx/model_quantized.onnx; do
             curl -sfL -o "$M/$f" "https://huggingface.co/Xenova/multilingual-e5-small/resolve/$MODEL_COMMIT/$f"
           done
-      # Windows: ONNX Runtime tự dựng với CRT tĩnh, lấy từ cache của ort-build-win (cùng repo, cùng khoá).
-      - uses: ./.github/actions/ort-win
-        if: runner.os == 'Windows'
+      # Windows: bản dựng sẵn của pyke (CRT động) với `-C target-feature=-crt-static` (bước cargo bên dưới), vì nguồn
+      # microsoft/onnxruntime không còn tải được để dựng ORT CRT tĩnh (ort-win). Đo ở DECISIONS: "win32-x64 tĩnh, CRT động, CI".
       # Đầu ra của cargo ghi vào file ngoài workspace: không in mã ra log công khai. Lỗi thì chỉ in dòng `error…:`.
       - name: Build search-eval
         working-directory: pkm-src
         run: |
+          if [ "$RUNNER_OS" = Windows ]; then
+            export RUSTFLAGS="-C target-feature=-crt-static"
+          fi
           if [ "$RUNNER_OS" = macOS ]; then
             export MACOSX_DEPLOYMENT_TARGET=13.4
             export RUSTFLAGS="-C link-arg=$(xcrun clang --print-file-name=lib/darwin/libclang_rt.osx.a)"
