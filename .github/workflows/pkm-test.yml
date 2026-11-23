@@ -35,6 +35,11 @@ jobs:
       PKM_NO_OHS: '1'
     steps:
       - uses: actions/checkout@v4
+      # Token chỉ đọc có hạn: hỏng thì dừng ngay với câu nói cách thay, còn dưới 7 ngày thì cảnh báo (ci/check-token.sh).
+      - name: Check PKM_READ_TOKEN
+        env:
+          PKM_READ_TOKEN: ${{ secrets.PKM_READ_TOKEN }}
+        run: ci/check-token.sh
       - uses: actions/checkout@v4
         with:
           repository: vantt/pkm
